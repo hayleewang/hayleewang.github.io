@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Groundhog Day Prognosticator Search</title>
+<style>
+  :root {
+    --bg: #ffffff; --panel: #f6f4ef; --ink: #1d2327; --muted: #5c666d; --line: #dcd8ce;
+    --accent: #1f4e8c; --winter: #2b6cb0; --spring: #e08a1e; --none: #c9ccd0;
+    --focus: #1f4e8c;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #14181b; --panel: #1d2327; --ink: #eceff1; --muted: #a2adb4; --line: #333c42;
+      --accent: #7db2ee; --winter: #5a9be0; --spring: #f0a23c; --none: #444d53; --focus: #7db2ee;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+    font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  .app { max-width: 900px; margin: 0 auto; padding: 16px; }
+  h1 { font-size: 1.5rem; margin: 0 0 4px; }
+  .lede { color: var(--muted); margin: 0 0 16px; }
+
+  .controls { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px;
+    display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+  .controls .wide { grid-column: 1 / -1; }
+  label { display: block; font-size: .8rem; font-weight: 600; margin-bottom: 3px; }
+  input[type=search], select { width: 100%; font: inherit; padding: 9px 10px; color: var(--ink);
+    background: var(--bg); border: 1px solid var(--line); border-radius: 6px; }
+  input:focus-visible, select:focus-visible, button:focus-visible, summary:focus-visible, a:focus-visible {
+    outline: 3px solid var(--focus); outline-offset: 2px; }
+  .check { display: flex; align-items: center; gap: 8px; font-size: .9rem; font-weight: 400; margin: 0; }
+  .check input { width: 18px; height: 18px; }
+  .bar { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin: 14px 0 8px; }
+  #count { font-weight: 600; }
+  .linkbtn { background: none; border: 0; color: var(--accent); font: inherit; text-decoration: underline; cursor: pointer; padding: 4px; }
+
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: .8rem; color: var(--muted); margin-bottom: 10px; }
+  .legend span { display: inline-flex; align-items: center; gap: 5px; }
+  .sw { width: 12px; height: 12px; border-radius: 2px; display: inline-block; }
+  .sw.w { background: var(--winter); } .sw.s { background: var(--spring); }
+  .sw.n { background: repeating-linear-gradient(45deg, var(--none) 0 2px, transparent 2px 4px); border: 1px solid var(--none); }
+  .sw.e { border: 1px solid var(--line); }
+
+  ul.results { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+  .card { border: 1px solid var(--line); border-radius: 10px; padding: 14px; background: var(--bg); }
+  .head { display: flex; gap: 12px; align-items: center; }
+  .thumb { width: 56px; height: 56px; border-radius: 50%; object-fit: cover; background: var(--panel); flex: none; }
+  .head h2 { font-size: 1.1rem; margin: 0; }
+  .where { color: var(--muted); font-size: .9rem; }
+  .tags { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+  .tag { font-size: .72rem; padding: 1px 8px; border-radius: 99px; background: var(--panel); border: 1px solid var(--line); }
+  .tag.retired { color: var(--muted); font-style: italic; }
+
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin: 12px 0 10px; }
+  .stat { background: var(--panel); border-radius: 8px; padding: 8px 10px; }
+  .stat b { display: block; font-size: 1.15rem; line-height: 1.2; }
+  .stat small { color: var(--muted); font-size: .75rem; }
+
+  .strip { display: grid; grid-template-columns: repeat(var(--n), 1fr); gap: 2px; }
+  .cell { height: 18px; border-radius: 2px; border: 1px solid var(--line); }
+  .cell.w { background: var(--winter); border-color: var(--winter); }
+  .cell.s { background: var(--spring); border-color: var(--spring); }
+  .cell.n { background: repeating-linear-gradient(45deg, var(--none) 0 2px, transparent 2px 4px); border-color: var(--none); }
+  .ticks { display: flex; justify-content: space-between; font-size: .7rem; color: var(--muted); margin-top: 2px; }
+
+  details { margin-top: 10px; font-size: .92rem; }
+  summary { cursor: pointer; color: var(--accent); }
+  details p { margin: 8px 0; }
+  .empty { padding: 28px 12px; text-align: center; color: var(--muted); border: 1px dashed var(--line); border-radius: 10px; }
+  .note { font-size: .8rem; color: var(--muted); margin-top: 18px; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+</style>
+</head>
+<body>
+<main class="app">
+  <h1>Groundhog Day prognosticator search</h1>
+  <p class="lede">Look up a weather-predicting critter and see how its forecasts have gone since 1990.</p>
+
+  <form class="controls" role="search" onsubmit="return false">
+    <div class="wide">
+      <label for="q">Search by name or town</label>
+      <input id="q" type="search" placeholder="e.g. Phil, Wiarton, Staten Island" autocomplete="off">
+    </div>
+    <div>
+      <label for="region">State or province</label>
+      <select id="region"><option value="">All</option></select>
+    </div>
+    <div>
+      <label for="creature">Type of creature</label>
+      <select id="creature"><option value="">All</option></select>
+    </div>
+    <div>
+      <label for="sort">Sort by</label>
+      <select id="sort">
+        <option value="name">Name (A–Z)</option>
+        <option value="seasons">Most seasons on record</option>
+        <option value="winter">Most “six more weeks” calls</option>
+        <option value="spring">Most “early spring” calls</option>
+      </select>
+    </div>
+    <div style="align-self:end">
+      <label class="check"><input id="active" type="checkbox"> Active predictors only</label>
+    </div>
+  </form>
+
+  <div class="bar">
+    <span id="count" aria-live="polite"></span>
+    <button id="reset" class="linkbtn" type="button">Clear filters</button>
+  </div>
+
+  <div class="legend" aria-hidden="true">
+    <span><i class="sw w"></i> Saw shadow (six more weeks of winter)</span>
+    <span><i class="sw s"></i> No shadow (early spring)</span>
+    <span><i class="sw n"></i> Prediction not recorded</span>
+    <span><i class="sw e"></i> Not yet active / no entry</span>
+  </div>
+
+  <ul id="results" class="results"></ul>
+
+  <p class="note">
+    <b>About “track record.”</b> This dataset records what each animal <em>predicted</em> each year, not what the weather actually did,
+    so it can’t score accuracy. The track record here is each predictor’s history: how many seasons it has called, its split between
+    winter and early spring, and how often it sided with the majority of all predictors that year (a measure of how mainstream
+    its calls are, not of whether it was right). Data:
+    <a href="https://the-art-of-data-journalism.github.io/tutorial-data/groundhogs/predictions.csv">predictions.csv</a>.
+  </p>
+</main>
+
+<script id="data" type="application/json">/*__DATA__*/[]</script>
+<script>
+(function () {
+  var DATA = JSON.parse(document.getElementById('data').textContent);
+  var $ = function (id) { return document.getElementById(id); };
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+  function norm(s) { return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, ''); }
+
+  // ---- year range + yearly majority ---------------------------------------
+  var minY = 9999, maxY = 0, tally = {};
+  DATA.forEach(function (p) {
+    Object.keys(p.y).forEach(function (yr) {
+      var y = +yr; if (y < minY) minY = y; if (y > maxY) maxY = y;
+      var v = p.y[yr]; if (v < 0) return;
+      var t = tally[yr] || (tally[yr] = [0, 0]); t[v]++;
+    });
+  });
+  var majority = {};
+  Object.keys(tally).forEach(function (yr) {
+    var t = tally[yr]; if (t[0] !== t[1]) majority[yr] = t[1] > t[0] ? 1 : 0;
+  });
+  var years = []; for (var y = minY; y <= maxY; y++) years.push(y);
+
+  // ---- per-predictor stats -------------------------------------------------
+  DATA.forEach(function (p) {
+    var w = 0, s = 0, agree = 0, judged = 0, first = 9999, last = 0;
+    Object.keys(p.y).forEach(function (yr) {
+      var v = p.y[yr]; if (v < 0) return;
+      v ? w++ : s++;
+      if (+yr < first) first = +yr; if (+yr > last) last = +yr;
+      if (majority[yr] !== undefined) { judged++; if (majority[yr] === v) agree++; }
+    });
+    p.w = w; p.s = s; p.n = w + s; p.first = first; p.last = last;
+    p.agree = judged ? Math.round(100 * agree / judged) : null;
+    p.hay = norm([p.name, p.short, p.city, p.region].join(' '));
+  });
+
+  // ---- filters -------------------------------------------------------------
+  function fill(sel, vals) {
+    vals.forEach(function (v) { var o = document.createElement('option'); o.value = o.textContent = v; sel.appendChild(o); });
+  }
+  function uniq(key) {
+    var c = {}; DATA.forEach(function (p) { c[p[key]] = (c[p[key]] || 0) + 1; });
+    return Object.keys(c).sort();
+  }
+  fill($('region'), uniq('region'));
+  fill($('creature'), uniq('creature').sort(function (a, b) {
+    if (a === 'Other') return 1; if (b === 'Other') return -1; return a < b ? -1 : 1; }));
+
+  var order = {
+    name: function (a, b) { return a.name.localeCompare(b.name); },
+    seasons: function (a, b) { return b.n - a.n || a.name.localeCompare(b.name); },
+    winter: function (a, b) { return b.w - a.w || a.name.localeCompare(b.name); },
+    spring: function (a, b) { return b.s - a.s || a.name.localeCompare(b.name); }
+  };
+
+  function pct(n, d) { return d ? Math.round(100 * n / d) + '%' : '–'; }
+
+  function card(p) {
+    var cells = years.map(function (yr) {
+      var v = p.y[yr], cls = '', label;
+      if (v === undefined) { label = yr + ': no entry'; }
+      else if (v < 0) { cls = ' n'; label = yr + ': prediction not recorded'; }
+      else if (v) { cls = ' w'; label = yr + ': saw shadow, six more weeks of winter'; }
+      else { cls = ' s'; label = yr + ': no shadow, early spring'; }
+      return '<i class="cell' + cls + '" title="' + esc(label) + '"></i>';
+    }).join('');
+    var where = [p.city, p.region, p.country].filter(Boolean).join(', ');
+    var span = p.n ? (p.first === p.last ? p.first : p.first + '–' + p.last) : 'none';
+    var summary = p.name + ': ' + p.n + ' recorded predictions, ' + p.w + ' winter, ' + p.s + ' early spring.';
+    return '<li class="card">' +
+      '<div class="head">' +
+        (p.img ? '<img class="thumb" loading="lazy" alt="" src="' + esc(p.img) + '" onerror="this.style.visibility=\'hidden\'">' : '') +
+        '<div><h2>' + esc(p.name) + '</h2><div class="where">' + esc(where) + '</div>' +
+        '<div class="tags"><span class="tag">' + esc(p.type) + '</span>' +
+        (p.active ? '' : '<span class="tag retired">Retired / inactive</span>') + '</div></div>' +
+      '</div>' +
+      '<div class="stats">' +
+        '<div class="stat"><b>' + p.n + '</b><small>predictions on record (' + esc(span) + ')</small></div>' +
+        '<div class="stat"><b>' + p.w + ' <span style="font-weight:400;font-size:.8rem">(' + pct(p.w, p.n) + ')</span></b><small>six more weeks of winter</small></div>' +
+        '<div class="stat"><b>' + p.s + ' <span style="font-weight:400;font-size:.8rem">(' + pct(p.s, p.n) + ')</span></b><small>early spring</small></div>' +
+        '<div class="stat"><b>' + (p.agree == null ? '–' : p.agree + '%') + '</b><small>of years sided with the majority</small></div>' +
+      '</div>' +
+      '<div role="img" aria-label="' + esc(summary + ' Year-by-year strip from ' + minY + ' to ' + maxY + '.') + '">' +
+        '<div class="strip" style="--n:' + years.length + '">' + cells + '</div>' +
+        '<div class="ticks"><span>' + minY + '</span><span>' + Math.round((minY + maxY) / 2) + '</span><span>' + maxY + '</span></div>' +
+      '</div>' +
+      '<details><summary>About ' + esc(p.short || p.name) + '</summary>' +
+        (p.desc ? '<p>' + esc(p.desc) + '</p>' : '') +
+        (p.successor ? '<p>Succeeded by: ' + esc(p.successor.replace(/-/g, ' ')) + '</p>' : '') +
+        (/^https?:\/\//.test(p.source) ? '<p><a href="' + esc(p.source) + '" target="_blank" rel="noopener">Source for past predictions</a></p>' : '') +
+      '</details></li>';
+  }
+
+  var timer;
+  function render() {
+    var q = norm($('q').value.trim()), reg = $('region').value, cr = $('creature').value, act = $('active').checked;
+    var terms = q ? q.split(/\s+/) : [];
+    var list = DATA.filter(function (p) {
+      if (reg && p.region !== reg) return false;
+      if (cr && p.creature !== cr) return false;
+      if (act && !p.active) return false;
+      return terms.every(function (t) { return p.hay.indexOf(t) !== -1; });
+    }).sort(order[$('sort').value]);
+    $('count').textContent = list.length + (list.length === 1 ? ' predictor' : ' predictors');
+    $('results').innerHTML = list.length ? list.map(card).join('') :
+      '<li class="empty">No predictors match. Try a different name or clear a filter.</li>';
+    // let a CMS iframe parent resize to fit
+    try { parent.postMessage({ type: 'groundhog-search-height', height: document.documentElement.scrollHeight }, '*'); } catch (e) {}
+  }
+
+  ['region', 'creature', 'sort', 'active'].forEach(function (id) { $(id).addEventListener('change', render); });
+  $('q').addEventListener('input', function () { clearTimeout(timer); timer = setTimeout(render, 120); });
+  $('reset').addEventListener('click', function () {
+    $('q').value = ''; $('region').value = ''; $('creature').value = ''; $('active').checked = false; $('sort').value = 'name'; render(); });
+  if (window.ResizeObserver) new ResizeObserver(function () {
+    try { parent.postMessage({ type: 'groundhog-search-height', height: document.documentElement.scrollHeight }, '*'); } catch (e) {}
+  }).observe(document.body);
+  render();
+})();
+</script>
+</body>
+</html>
