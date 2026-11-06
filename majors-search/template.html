@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UNL Majors Search | Daily Nebraskan</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600;700&family=Roboto+Condensed:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root { --red:#ba1f1f; --ink:#222; --muted:#515151; --line:#c9c8cd; --panel:#f4f4f4; --bg:#fff; --grid:#e3e3e3; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.5 'Open Sans',Arial,sans-serif; }
+  .app { max-width:760px; margin:0 auto; padding:16px; }
+  .kicker { font:700 .8rem/1 'Roboto Condensed',Arial,sans-serif; text-transform:uppercase; letter-spacing:.08em; color:var(--red);
+    border-top:4px solid var(--red); padding-top:10px; }
+  h1 { font:700 2rem/1.1 'Roboto Condensed',Arial,sans-serif; margin:6px 0 6px; }
+  .lede { color:var(--muted); margin:0 0 16px; }
+  label { display:block; font:700 .85rem 'Roboto Condensed',Arial,sans-serif; text-transform:uppercase; letter-spacing:.05em; margin-bottom:4px; }
+  .search { position:relative; }
+  input[type=search] { width:100%; font:inherit; padding:12px; border:2px solid var(--ink); border-radius:0; background:#fff; color:var(--ink); }
+  input:focus-visible, button:focus-visible, [role=option]:focus-visible { outline:3px solid var(--red); outline-offset:2px; }
+  .opts { list-style:none; margin:0; padding:0; border:1px solid var(--line); border-top:0; max-height:280px; overflow:auto; background:#fff; }
+  .opts[hidden] { display:none; }
+  .opts li { padding:9px 12px; border-bottom:1px solid var(--panel); cursor:pointer; display:flex; justify-content:space-between; gap:10px; }
+  .opts li[aria-selected=true], .opts li:hover { background:var(--panel); }
+  .opts .m { font-weight:600; } .opts .c { color:var(--muted); font-size:.82rem; }
+  .opts .n { color:var(--muted); font-size:.85rem; white-space:nowrap; }
+  .opts mark { background:none; color:var(--red); }
+  .chips { display:flex; flex-wrap:wrap; gap:6px; margin:10px 0 0; align-items:center; font-size:.85rem; }
+  .chip { border:1px solid var(--line); background:var(--panel); padding:3px 10px; font:inherit; font-size:.85rem; cursor:pointer; border-radius:99px; color:var(--ink); }
+  .chip:hover { border-color:var(--red); color:var(--red); }
+  .result { margin-top:22px; border-top:1px solid var(--line); padding-top:14px; }
+  .result h2 { font:700 1.6rem/1.15 'Roboto Condensed',Arial,sans-serif; margin:0; }
+  .where { color:var(--muted); font-size:.9rem; margin:2px 0 12px; }
+  .stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:8px; margin-bottom:10px; }
+  .stat { background:var(--panel); padding:8px 10px; border-left:4px solid var(--red); }
+  .stat b { display:block; font:700 1.5rem/1.2 'Roboto Condensed',Arial,sans-serif; }
+  .stat small { color:var(--muted); font-size:.78rem; }
+  .sentence { margin:8px 0 6px; }
+  svg { width:100%; height:auto; display:block; overflow:visible; }
+  .tip { position:absolute; pointer-events:none; background:var(--ink); color:#fff; font-size:.8rem; padding:4px 8px; transform:translate(-50%,-120%); white-space:nowrap; }
+  .chartwrap { position:relative; }
+  .empty { padding:24px; text-align:center; color:var(--muted); border:1px dashed var(--line); margin-top:20px; }
+  .note { font-size:.78rem; color:var(--muted); margin-top:16px; border-top:1px solid var(--line); padding-top:8px; }
+  .sr { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); }
+  table.dt { border-collapse:collapse; font-size:.85rem; margin-top:8px; width:100%; }
+  table.dt th, table.dt td { text-align:right; padding:3px 6px; border-bottom:1px solid var(--panel); }
+  details summary { cursor:pointer; color:var(--red); font-size:.85rem; margin-top:8px; }
+</style>
+</head>
+<body>
+<main class="app">
+  <div class="kicker">Daily Nebraskan Data</div>
+  <h1>What are Huskers studying?</h1>
+  <p class="lede">Search any major at the University of Nebraska–Lincoln to see how many students have enrolled in it each fall since 2016.</p>
+
+  <div class="search">
+    <label for="q">Search for a major</label>
+    <input id="q" type="search" autocomplete="off" placeholder="Try “journalism,” “nursing” or “computer”"
+      role="combobox" aria-expanded="false" aria-controls="opts" aria-autocomplete="list">
+    <ul class="opts" id="opts" role="listbox" hidden></ul>
+  </div>
+  <div class="chips" id="chips"><span>Popular:</span></div>
+
+  <div id="out" aria-live="polite"><div class="empty">Start typing a major above to see its trend.</div></div>
+
+  <p class="note">Source: University of Nebraska–Lincoln, Fall headcounts by major and college, Fall 2016–Fall 2025 (request DR12573). Students are counted by their primary major; counts across degree levels within the same college are combined. Majors that were renamed, added or dropped show up as separate entries.</p>
+</main>
+<script>
+const DATA = __DATA__;
+const Y = DATA.years, M = DATA.majors;
+const $ = id => document.getElementById(id);
+const q = $('q'), opts = $('opts'), out = $('out');
+const fmt = n => n==null ? '–' : n.toLocaleString('en-US');
+const esc = s => s.replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const nice = s => s.toLowerCase().replace(/(^|[\s(\/-])([a-z])/g,(a,b,c)=>b+c.toUpperCase())
+  .replace(/\b(And|Of|In|For|The|To)\b/g,m=>m.toLowerCase()).replace(/^./,c=>c.toUpperCase())
+  .replace(/\b(Ag|Ba|Bs|Ii|Iii|Cs|Hr|It|Gis|Unl|Uno|Raikes)\b/gi,m=>m.toUpperCase().replace('RAIKES','Raikes'));
+M.forEach(m => { m.name = nice(m.m); m.last = [...m.v].reverse().find(x=>x!=null) ?? 0;
+  m.level = m.g ? 'Graduate' : 'Undergraduate'; m.college = m.c.replace(' + ',' & '); });
+
+let active = -1, shown = [];
+function search(term){
+  term = term.trim().toLowerCase(); if(!term) return [];
+  const words = term.split(/\s+/);
+  return M.map(m => { const hay=(m.m+' '+m.c).toLowerCase();
+      if(!words.every(w=>hay.includes(w))) return null;
+      const s = (m.m.toLowerCase().startsWith(term)?0:m.m.toLowerCase().includes(term)?1:2) + (m.last? 0:5);
+      return {m,s}; }).filter(Boolean).sort((a,b)=>a.s-b.s||b.m.last-a.m.last).slice(0,30).map(x=>x.m);
+}
+function hl(name, term){ const i=name.toLowerCase().indexOf(term.trim().toLowerCase());
+  return i<0||!term.trim()? esc(name) : esc(name.slice(0,i))+'<mark>'+esc(name.slice(i,i+term.trim().length))+'</mark>'+esc(name.slice(i+term.trim().length)); }
+function renderOpts(){
+  shown = search(q.value); active = -1;
+  if(!q.value.trim()){ opts.hidden=true; q.setAttribute('aria-expanded','false'); return; }
+  opts.hidden=false; q.setAttribute('aria-expanded','true');
+  opts.innerHTML = shown.length ? shown.map((m,i)=>`<li role="option" id="o${i}" data-i="${i}"><span><span class="m">${hl(m.name,q.value)}</span><br><span class="c">${esc(m.college)} · ${m.level}</span></span><span class="n">${m.last?fmt(m.last)+' students':'no recent data'}</span></li>`).join('')
+    : '<li>No majors match that search.</li>';
+}
+function setActive(i){ const els=opts.querySelectorAll('[role=option]'); if(!els.length) return;
+  active=(i+els.length)%els.length; els.forEach((e,j)=>e.setAttribute('aria-selected',j===active));
+  q.setAttribute('aria-activedescendant','o'+active); els[active].scrollIntoView({block:'nearest'}); }
+q.addEventListener('input',renderOpts);
+q.addEventListener('focus',()=>{ if(q.value.trim()) renderOpts(); });
+q.addEventListener('keydown',e=>{
+  if(e.key==='ArrowDown'){e.preventDefault(); setActive(active+1);}
+  else if(e.key==='ArrowUp'){e.preventDefault(); setActive(active-1);}
+  else if(e.key==='Enter'){ e.preventDefault(); const m=shown[active<0?0:active]; if(m) pick(m); }
+  else if(e.key==='Escape'){ opts.hidden=true; q.setAttribute('aria-expanded','false'); }
+});
+opts.addEventListener('mousedown',e=>{ const li=e.target.closest('[data-i]'); if(li){ e.preventDefault(); pick(shown[+li.dataset.i]); } });
+document.addEventListener('click',e=>{ if(!e.target.closest('.search')){ opts.hidden=true; q.setAttribute('aria-expanded','false'); } });
+
+function chart(m){
+  const W=720,H=320,L=52,R=20,T=18,B=34, iw=W-L-R, ih=H-T-B;
+  const vals=m.v.filter(v=>v!=null), max=Math.max(...vals,1);
+  const step=[1,2,5,10,20,25,50,100,200,250,500,1000,2000].find(s=>max/s<=5)||2000;
+  const top=Math.ceil(max/step)*step;
+  const x=i=>L+iw*i/(Y.length-1), y=v=>T+ih-ih*v/top;
+  let g='';
+  for(let t=0;t<=top;t+=step) g+=`<line x1="${L}" x2="${W-R}" y1="${y(t)}" y2="${y(t)}" stroke="var(--grid)"/><text x="${L-8}" y="${y(t)+4}" text-anchor="end" font-size="12" fill="var(--muted)">${fmt(t)}</text>`;
+  Y.forEach((yr,i)=>{ g+=`<text x="${x(i)}" y="${H-10}" text-anchor="middle" font-size="12" fill="var(--muted)">${W<500?"'"+String(yr).slice(2):yr}</text>`; });
+  // line segments (break at gaps)
+  let segs=[],cur=[]; m.v.forEach((v,i)=>{ if(v==null){ if(cur.length) segs.push(cur); cur=[]; } else cur.push([x(i),y(v)]); }); if(cur.length) segs.push(cur);
+  segs.forEach(s=>{ if(s.length>1) g+=`<polyline points="${s.map(p=>p.join(',')).join(' ')}" fill="none" stroke="var(--red)" stroke-width="3" stroke-linejoin="round"/>`; });
+  m.v.forEach((v,i)=>{ if(v==null) return; g+=`<circle cx="${x(i)}" cy="${y(v)}" r="5" fill="#fff" stroke="var(--red)" stroke-width="2.5" data-i="${i}"/>`;
+    if(i===0||i===Y.length-1||v===max) g+=`<text x="${x(i)}" y="${y(v)-11}" text-anchor="${i===0?'start':i===Y.length-1?'end':'middle'}" font-size="13" font-weight="700" fill="var(--ink)">${fmt(v)}</text>`; });
+  g+=m.v.map((v,i)=>`<rect class="hit" data-i="${i}" x="${x(i)-iw/(Y.length-1)/2}" y="${T}" width="${iw/(Y.length-1)}" height="${ih}" fill="transparent"><title>Fall ${Y[i]}: ${fmt(v)}</title></rect>`).join('');
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Line chart of ${esc(m.name)} students, Fall ${Y[0]} to Fall ${Y[Y.length-1]}">${g}</svg>`;
+}
+function pick(m){
+  q.value=m.name; opts.hidden=true; q.setAttribute('aria-expanded','false');
+  const v=m.v, first=v.findIndex(x=>x!=null), lastI=v.length-1-[...v].reverse().findIndex(x=>x!=null);
+  const a=v[first], b=v[lastI], vals=v.filter(x=>x!=null), mx=Math.max(...vals), mxY=Y[v.indexOf(mx)];
+  const ch=b-a, pct=a? Math.round(ch/a*100):null;
+  let sentence;
+  if(lastI<Y.length-1) sentence=`${m.name} has no students listed in Fall ${Y[Y.length-1]}; its last year in the data was Fall ${Y[lastI]}, with ${fmt(b)} students.`;
+  else if(first>0) sentence=`${m.name} first appears in Fall ${Y[first]} with ${fmt(a)} students and now has ${fmt(b)}.`;
+  else sentence=`${m.name} ${ch>0?'grew':ch<0?'shrank':'held steady'} ${ch?'from '+fmt(a)+' students in Fall '+Y[0]+' to '+fmt(b)+' in Fall '+Y[lastI]+(pct!=null?` (${ch>0?'+':''}${pct}%)`:''):'at '+fmt(a)+' students'}.`;
+  out.innerHTML=`<section class="result"><h2>${esc(m.name)}</h2><div class="where">${esc(m.college)} · ${m.level}</div>
+    <div class="stats"><div class="stat"><b>${fmt(b)}</b><small>Fall ${Y[lastI]}</small></div>
+    <div class="stat"><b>${ch>0?'+':''}${fmt(ch)}${pct!=null&&first<lastI?` <span style="font-size:1rem">(${ch>0?'+':''}${pct}%)</span>`:''}</b><small>since Fall ${Y[first]}</small></div>
+    <div class="stat"><b>${fmt(mx)}</b><small>Peak (Fall ${mxY})</small></div></div>
+    <p class="sentence">${esc(sentence)}${m.c.includes(' + ')?' Counts are combined across colleges because the major moved or is offered in more than one.':''}</p>
+    <div class="chartwrap" id="cw">${chart(m)}</div>
+    <details><summary>View the numbers</summary><table class="dt"><thead><tr><th scope="col" style="text-align:left">Fall</th>${Y.map(y=>`<th scope="col">${y}</th>`).join('')}</tr></thead><tbody><tr><th scope="row" style="text-align:left">Students</th>${v.map(x=>`<td>${fmt(x)}</td>`).join('')}</tr></tbody></table></details></section>`;
+  try{ parent.postMessage({type:'dn-majors-height',height:document.documentElement.scrollHeight},'*'); }catch(e){}
+}
+['Journalism','Computer Science','Psychology','Mechanical Engineering','Elementary Education'].forEach(t=>{
+  const m=M.find(m=>m.name.toLowerCase()===t.toLowerCase()&&!m.g)||M.find(m=>m.name.toLowerCase().includes(t.toLowerCase())&&m.last&&!m.g)||M.find(m=>m.name.toLowerCase().includes(t.toLowerCase())); if(!m) return;
+  const b=document.createElement('button'); b.className='chip'; b.type='button'; b.textContent=m.name; b.onclick=()=>pick(m); $('chips').appendChild(b); });
+new ResizeObserver(()=>{ try{ parent.postMessage({type:'dn-majors-height',height:document.documentElement.scrollHeight},'*'); }catch(e){} }).observe(document.body);
+</script>
+</body>
+</html>
