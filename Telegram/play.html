@@ -1,0 +1,350 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Play the News | Daily Nebraskan</title>
+<link href="https://fonts.googleapis.com/css2?family=UnifrakturCook:wght@700&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Oswald:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  :root { --paper:#f6f1e7; --ink:#111; --red:#D00000; --mute:#555; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--paper); color:var(--ink); font-family:"Libre Baskerville",Georgia,serif; }
+  .page { max-width:840px; margin:0 auto; padding:16px; }
+  .mast { text-align:center; border-bottom:4px double var(--ink); padding-bottom:6px; }
+  .mast a { color:inherit; text-decoration:none; }
+  .mast h1 { font-family:"UnifrakturCook","Old English Text MT",serif; font-size:clamp(34px,8vw,56px); margin:0; line-height:1.1; }
+  .dateline { display:flex; justify-content:space-between; font:500 12px Oswald,sans-serif; letter-spacing:1.5px; text-transform:uppercase;
+              border-bottom:1px solid var(--ink); padding:6px 0; color:var(--mute); }
+  .kicker { font:700 13px Oswald,sans-serif; letter-spacing:2px; color:var(--red); text-transform:uppercase; margin:18px 0 2px; }
+  #hl { font-size:clamp(22px,5vw,34px); line-height:1.2; margin:0 0 4px; }
+  .by { font-size:13px; font-style:italic; color:var(--mute); margin:0 0 14px; }
+  .by a, .card a { color:var(--red); }
+  #wrap { position:relative; width:100%; }
+  canvas { width:100%; height:auto; display:block; background:#9fd3ff; border:3px solid var(--ink); image-rendering:pixelated; }
+  #overlay { position:absolute; inset:0; display:none; align-items:center; justify-content:center; padding:12px; background:rgba(17,17,17,.7); overflow:auto; }
+  #overlay.on { display:flex; }
+  @media (max-width:700px) { #overlay { position:fixed; z-index:10; align-items:flex-start; } .card { max-height:none; margin:auto 0; } }
+  .card { background:var(--paper); color:var(--ink); border:2px solid var(--ink); border-top:7px solid var(--red); padding:16px 18px;
+          max-width:600px; width:100%; text-align:left; max-height:100%; overflow:auto; }
+  .card h2 { margin:2px 0 8px; font-size:clamp(17px,3.6vw,22px); line-height:1.25; }
+  .card p { margin:8px 0; line-height:1.5; font-size:14px; }
+  .tag { font:700 12px Oswald,sans-serif; letter-spacing:2px; color:var(--red); text-transform:uppercase; }
+  .opt, .go { display:block; width:100%; margin:8px 0 0; padding:10px 12px; font:400 14px "Libre Baskerville",serif; text-align:left;
+              background:#fff; color:var(--ink); border:2px solid var(--ink); cursor:pointer; text-decoration:none; }
+  .opt:hover { background:#eee; }
+  .opt.right { background:#2e7d32; color:#fff; border-color:#1b5e20; }
+  .opt.wrong { background:#bbb; color:#444; border-color:#888; }
+  .go { text-align:center; background:var(--red); color:#fff; font:700 15px Oswald,sans-serif; letter-spacing:1.5px; text-transform:uppercase; }
+  .go:hover { background:#a30000; }
+  #pad { display:none; justify-content:space-between; gap:10px; margin-top:10px; user-select:none; }
+  #pad button { flex:1; padding:18px 0; font:700 18px Oswald,sans-serif; background:var(--red); color:#fff; border:2px solid var(--ink); touch-action:none; }
+  @media (pointer:coarse) { #pad { display:flex; } }
+  .hint { font:500 12px Oswald,sans-serif; letter-spacing:1px; text-transform:uppercase; margin-top:10px; color:var(--mute); text-align:center; }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="mast"><a href="/"><h1>The Daily Nebraskan</h1></a></div>
+  <div class="dateline"><span>Play the news</span><span id="date"></span><span>Go Big Red</span></div>
+  <div class="kicker">Interactive</div>
+  <h2 id="hl">Loading the story...</h2>
+  <p class="by">Questions based on reporting from the Daily Nebraskan. <a id="src" href="#" target="_blank" rel="noopener">Read the story</a> &middot; <a href="/">Make your own</a></p>
+  <div id="wrap">
+    <canvas id="c" width="800" height="448"></canvas>
+    <div id="overlay"><div class="card" id="card"></div></div>
+  </div>
+  <div id="pad">
+    <button id="bL" aria-label="Left">&#9664;</button>
+    <button id="bR" aria-label="Right">&#9654;</button>
+    <button id="bJ" aria-label="Jump">JUMP</button>
+  </div>
+  <div class="hint">Arrows or WASD to move &middot; Space to jump &middot; Bonk the ? blocks from below</div>
+</div>
+<script>document.getElementById("date").textContent = new Date().toLocaleDateString("en-US", { month:"long", day:"numeric", year:"numeric" });</script>
+<script>
+let QUESTIONS = [], STORY = {};
+const DN_RED = '#D00000';
+
+/* ===== setup ===== */
+const T = 32, W = 140, H = 14, VW = 800, VH = 448, GROUND = 12;
+const cv = document.getElementById("c"), ctx = cv.getContext("2d");
+const overlay = document.getElementById("overlay"), card = document.getElementById("card");
+let map, enemies, state, score, lives, correct, answered, cam, P, lastSafe, flagX, qBlocks, particles, shake;
+
+const keys = {};
+let jumpQueued = false;
+addEventListener("keydown", e => {
+  if (["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"," "].includes(e.key)) e.preventDefault();
+  if (!keys[e.key] && (e.key === " " || e.key === "ArrowUp" || e.key.toLowerCase() === "w")) jumpQueued = true;
+  keys[e.key.toLowerCase()] = true; keys[e.key] = true;
+  if (state === "question") { const n = +e.key; if (n >= 1 && n <= 3) pick(n - 1); }
+  if (e.key === "Enter") { if (state === "title" || state === "over" || state === "win") start(); else if (state === "feedback") closeFeedback(); }
+});
+addEventListener("keyup", e => { keys[e.key.toLowerCase()] = false; keys[e.key] = false; });
+function hold(id, key) {
+  const b = document.getElementById(id);
+  const on = e => { e.preventDefault(); keys[key] = true; if (key === " ") jumpQueued = true; };
+  const off = e => { e.preventDefault(); keys[key] = false; };
+  b.addEventListener("pointerdown", on); b.addEventListener("pointerup", off); b.addEventListener("pointerleave", off);
+}
+hold("bL", "arrowleft"); hold("bR", "arrowright"); hold("bJ", " ");
+
+let actx;
+function beep(f, d, type = "square", v = 0.05) {
+  try {
+    actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+    const o = actx.createOscillator(), g = actx.createGain();
+    o.type = type; o.frequency.value = f; g.gain.value = v;
+    o.connect(g); g.connect(actx.destination); o.start(); o.stop(actx.currentTime + d);
+  } catch (e) {}
+}
+
+/* ===== level ===== */
+function buildLevel() {
+  map = Array.from({ length: H }, () => Array(W).fill(" "));
+  const pits = [[28,30],[62,64],[95,97],[118,120]];
+  for (let c = 0; c < W; c++) {
+    if (pits.some(([a,b]) => c >= a && c <= b)) continue;
+    map[12][c] = "#"; map[13][c] = "#";
+  }
+  const plat = (c, r, n) => { for (let i = 0; i < n; i++) map[r][c + i] = "#"; };
+  plat(14,9,4); plat(40,9,5); plat(52,9,5); plat(78,9,4); plat(100,9,4); plat(26,9,3); plat(60,9,3);
+  const qs = [[10,8],[20,8],[36,8],[50,8],[54,6],[72,8],[85,8],[106,6]];
+  qBlocks = qs.map(([c, r], i) => ({ c, r, i }));
+  qs.forEach(([c, r]) => map[r][c] = "?");
+  enemies = [15,24,33,45,58,69,80,90,102,112,125].map(c => ({ x: c*T, y: GROUND*T - 26, w: 26, h: 26, dir: -1, alive: true, t: 0 }));
+  flagX = 132 * T;
+}
+const solid = (c, r) => c < 0 || c >= W ? true : (r < 0 || r >= H ? false : "#?u".includes(map[r][c]));
+
+/* ===== game flow ===== */
+function start() {
+  buildLevel();
+  P = { x: 60, y: GROUND*T - 32, w: 22, h: 32, vx: 0, vy: 0, on: false, face: 1, inv: 0, t: 0 };
+  lastSafe = { x: 60, y: P.y };
+  score = 0; lives = 3; correct = 0; answered = 0; cam = 0; particles = []; shake = 0;
+  hide(); state = "play";
+}
+function show(html) { card.innerHTML = html; overlay.classList.add("on"); }
+function hide() { overlay.classList.remove("on"); }
+function titleScreen() {
+  state = "title";
+  show(`<div class="tag">Interactive</div><h2>${esc(STORY.title || "Play the news")}</h2>
+    <p>Run through Lincoln to Memorial Stadium. Bonk the <b>?</b> blocks to answer questions about this story. Right answers score. Wrong answers cost a heart. Squash the Hawks.</p>
+    <button class="go" onclick="start()">Kick off (Enter)</button>`);
+}
+function loseLife(why) {
+  lives--; shake = 10; beep(120, .25, "sawtooth", .08);
+  if (lives <= 0) { gameOver(); return true; }
+  return false;
+}
+function endLinks() {
+  const read = STORY.url ? `<a href="${esc(STORY.url)}" target="_blank" rel="noopener">Read the full story</a> &middot; ` : "";
+  return `<p>${read}<a href="#" onclick="shareGame();return false">Copy link to share</a></p>`;
+}
+async function shareGame() {
+  try { await navigator.clipboard.writeText(location.href); alert("Link copied. Send it to a friend."); } catch (e) { prompt("Copy this link:", location.href); }
+}
+function gameOver() {
+  state = "over";
+  show(`<div class="tag">GAME OVER</div><h2>Extra! Extra! You got sacked</h2>
+    <p>Score: ${score}<br>Questions right: ${correct} of ${QUESTIONS.length}</p>${endLinks()}
+    <button class="go" onclick="start()">TRY AGAIN</button>`);
+}
+function winGame() {
+  state = "win"; score += lives * 200;
+  const msg = correct >= 7 ? "Heisman-level editor!" : correct >= 5 ? "Solid starter. Keep reading the DN." : "Walk-on. Time to study the paper.";
+  show(`<div class="tag">FINAL EDITION</div><h2>Memorial Stadium reached</h2>
+    <p>${msg}<br>Questions right: ${correct} of ${QUESTIONS.length}<br>Final score (with heart bonus): ${score}</p>${endLinks()}
+    <button class="go" onclick="start()">PLAY AGAIN</button>`);
+  beep(660, .15); setTimeout(() => beep(880, .3), 160);
+}
+
+/* ===== questions ===== */
+let cur = null;
+function askQuestion(block) {
+  const qd = QUESTIONS[block.i % QUESTIONS.length];
+  const opts = qd.a.map((text, k) => ({ text, ok: k === 0 })).sort(() => Math.random() - .5);
+  cur = { qd, opts, block };
+  state = "question";
+  show(`<div class="tag">QUESTION ${answered + 1} OF ${QUESTIONS.length}</div><h2>${esc(qd.q)}</h2>` +
+    opts.map((o, k) => `<button class="opt" onclick="pick(${k})">${k + 1}. ${esc(o.text)}</button>`).join(""));
+}
+function pick(k) {
+  if (state !== "question") return;
+  state = "feedback";
+  const ok = cur.opts[k].ok;
+  answered++;
+  map[cur.block.r][cur.block.c] = "u";
+  if (ok) { correct++; score += 100; beep(880, .12); setTimeout(() => beep(1175, .2), 120); pop(cur.block, "+100"); }
+  else { beep(110, .3, "sawtooth", .08); pop(cur.block, "-1 HEART"); }
+  const btns = [...card.querySelectorAll(".opt")];
+  btns.forEach((b, i) => { b.disabled = true; b.classList.add(cur.opts[i].ok ? "right" : "wrong"); });
+  card.insertAdjacentHTML("beforeend", `<p>${ok ? "Correct! " : "Not quite. "}${esc(cur.qd.why)}</p><button class="go" onclick="closeFeedback()">KEEP RUNNING (ENTER)</button>`);
+  cur.ok = ok;
+}
+function closeFeedback() {
+  if (state !== "feedback") return;
+  hide(); state = "play";
+  if (!cur.ok && loseLife()) return;
+}
+const esc = s => s.replace(/[&<>"]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c]));
+function pop(b, text) { particles.push({ x: b.c*T + 16, y: b.r*T, text, life: 60 }); }
+
+/* ===== physics ===== */
+function moveX(e) {
+  e.x += e.vx;
+  const top = Math.floor(e.y / T), bot = Math.floor((e.y + e.h - 1) / T);
+  if (e.vx > 0) { const c = Math.floor((e.x + e.w) / T); for (let r = top; r <= bot; r++) if (solid(c, r)) { e.x = c*T - e.w; e.vx = 0; e.hit = true; break; } }
+  else if (e.vx < 0) { const c = Math.floor(e.x / T); for (let r = top; r <= bot; r++) if (solid(c, r)) { e.x = (c+1)*T; e.vx = 0; e.hit = true; break; } }
+}
+function moveY(e) {
+  e.y += e.vy; e.on = false;
+  const l = Math.floor(e.x / T), r2 = Math.floor((e.x + e.w - 1) / T);
+  if (e.vy >= 0) {
+    const r = Math.floor((e.y + e.h) / T);
+    for (let c = l; c <= r2; c++) if (solid(c, r)) { e.y = r*T - e.h; e.vy = 0; e.on = true; break; }
+  } else {
+    const r = Math.floor(e.y / T);
+    let hitC = -1;
+    const mid = (e.x + e.w / 2) / T;
+    for (let c = l; c <= r2; c++) if (solid(c, r) && (hitC < 0 || Math.abs(c + .5 - mid) < Math.abs(hitC + .5 - mid))) hitC = c;
+    if (hitC >= 0) {
+      e.y = (r+1)*T; e.vy = 0;
+      if (e === P && map[r] && map[r][hitC] === "?") { askQuestion(qBlocks.find(b => b.c === hitC && b.r === r)); jumpQueued = false; }
+    }
+  }
+}
+
+function update() {
+  if (state !== "play") return;
+  const L = keys["arrowleft"] || keys["a"], R = keys["arrowright"] || keys["d"], jumpHeld = keys[" "] || keys["arrowup"] || keys["w"];
+  const acc = .5, max = 3.4;
+  if (L) { P.vx -= acc; P.face = -1; } if (R) { P.vx += acc; P.face = 1; }
+  if (!L && !R) P.vx *= .8; if (Math.abs(P.vx) < .05) P.vx = 0;
+  P.vx = Math.max(-max, Math.min(max, P.vx));
+  if (jumpQueued && P.on) { P.vy = -11; beep(520, .08); }
+  jumpQueued = false;
+  if (!jumpHeld && P.vy < -4) P.vy *= .6;
+  P.vy = Math.min(P.vy + .55, 12);
+  moveX(P); if (state !== "play") return; moveY(P);
+  if (state !== "play") return;
+  if (P.x < 0) P.x = 0;
+  P.t += Math.abs(P.vx);
+  if (P.inv > 0) P.inv--;
+  if (P.on && solid(Math.floor(P.x / T), Math.floor((P.y + P.h) / T)) && solid(Math.floor((P.x + P.w) / T), Math.floor((P.y + P.h) / T))) lastSafe = { x: P.x, y: P.y };
+  if (P.y > H*T + 60) {
+    if (loseLife()) return;
+    P.x = Math.max(0, lastSafe.x - 48); P.y = lastSafe.y - 10; P.vx = P.vy = 0; P.inv = 90;
+  }
+  for (const e of enemies) {
+    if (!e.alive) { e.t--; continue; }
+    e.vx = e.dir * .8; e.hit = false; moveX(e);
+    const ax = e.dir > 0 ? e.x + e.w + 2 : e.x - 2;
+    if (e.hit || !solid(Math.floor(ax / T), GROUND)) e.dir *= -1;
+    if (P.x < e.x + e.w && P.x + P.w > e.x && P.y < e.y + e.h && P.y + P.h > e.y) {
+      if (P.vy > 0 && P.y + P.h - e.y < 16) { e.alive = false; e.t = 20; P.vy = -7; score += 50; beep(300, .1); pop({ c: e.x / T, r: e.y / T }, "+50"); }
+      else if (P.inv === 0) {
+        P.inv = 100; P.vy = -6; P.vx = -P.face * 4; if (loseLife()) return;
+      }
+    }
+  }
+  if (P.x + P.w > flagX) { winGame(); return; }
+  cam = Math.max(0, Math.min(W*T - VW, P.x - 320));
+  particles.forEach(p => { p.y -= 1; p.life--; }); particles = particles.filter(p => p.life > 0);
+  if (shake > 0) shake--;
+}
+
+/* ===== drawing ===== */
+function rect(x, y, w, h, c) { ctx.fillStyle = c; ctx.fillRect(Math.round(x - cam), Math.round(y), w, h); }
+function txt(s, x, y, size, color, align = "left") {
+  ctx.font = `bold ${size}px "Courier New",monospace`; ctx.fillStyle = color; ctx.textAlign = align; ctx.fillText(s, x, y);
+}
+function draw() {
+  ctx.save();
+  if (shake > 0) ctx.translate((Math.random() - .5) * 6, (Math.random() - .5) * 6);
+  ctx.fillStyle = "#a8d8ff"; ctx.fillRect(0, 0, VW, VH);
+  ctx.fillStyle = "#fff";
+  for (let i = 0; i < 12; i++) { const x = ((i * 380 - cam * .3) % (VW + 300)) - 100 + (i * 380 - cam * .3 < -100 ? VW + 300 : 0); ctx.fillRect(x, 50 + (i % 3) * 40, 90, 22); ctx.fillRect(x + 18, 38 + (i % 3) * 40, 52, 16); }
+  ctx.fillStyle = "#c8a94a";
+  for (let i = 0; i < 80; i++) { const x = ((i * 34 - cam * .6) % (VW + 40) + VW + 40) % (VW + 40) - 20; ctx.fillRect(x, 300 - (i % 5) * 6, 5, 90); ctx.fillStyle = i % 2 ? "#b79a3d" : "#c8a94a"; }
+  /* start sign and stadium at the end */
+  rect(20, 300, 150, 84, "#6b0000"); rect(24, 304, 142, 76, "#D00000");
+  ctx.save(); ctx.translate(-cam, 0); txt("GO BIG", 95, 336, 18, "#FDF2D0", "center"); txt("RED", 95, 362, 22, "#FDF2D0", "center"); ctx.restore();
+  rect(flagX - 160, 250, 300, 134, "#8a8a8a"); rect(flagX - 160, 250, 300, 14, "#D00000");
+  ctx.save(); ctx.translate(-cam, 0); txt("MEMORIAL STADIUM", flagX - 10, 290, 16, "#FDF2D0", "center"); ctx.restore();
+  rect(flagX + 100, 190, 6, 194, "#fff"); rect(flagX + 106, 190, 36, 24, "#D00000");
+  ctx.save(); ctx.translate(-cam, 0); txt("N", flagX + 124, 209, 18, "#FDF2D0", "center"); ctx.restore();
+  /* tiles */
+  const c0 = Math.floor(cam / T), c1 = Math.min(W - 1, c0 + Math.ceil(VW / T) + 1);
+  for (let r = 0; r < H; r++) for (let c = c0; c <= c1; c++) {
+    const t = map[r][c]; if (t === " ") continue;
+    const x = c * T, y = r * T;
+    if (t === "#") {
+      rect(x, y, T, T, "#D00000");
+      rect(x, y + 15, T, 2, "#FDF2D0"); rect(x + ((r % 2) ? 8 : 20), y, 2, 16, "#FDF2D0"); rect(x + ((r % 2) ? 24 : 6), y + 17, 2, 15, "#FDF2D0");
+      if (r === GROUND || (r < GROUND && !solid(c, r - 1))) rect(x, y, T, 4, "#7a1a1a");
+    } else if (t === "?") {
+      rect(x, y, T, T, "#e8b500"); rect(x + 2, y + 2, T - 4, T - 4, "#FDF2D0");
+      ctx.save(); ctx.translate(-cam, 0); txt("?", x + 16, y + 25, 24, "#D00000", "center"); ctx.restore();
+    } else { rect(x, y, T, T, "#6b0000"); rect(x + 3, y + 3, T - 6, T - 6, "#8a1c1c"); }
+  }
+  /* enemies: Hawks */
+  for (const e of enemies) {
+    if (!e.alive) { if (e.t > 0) { rect(e.x, e.y + 18, e.w, 8, "#222"); rect(e.x, e.y + 18, e.w, 3, "#f5c400"); } continue; }
+    rect(e.x, e.y + 6, e.w, 20, "#222"); rect(e.x + 2, e.y + 2, e.w - 4, 8, "#f5c400");
+    rect(e.x + 6, e.y + 10, 5, 5, "#fff"); rect(e.x + 15, e.y + 10, 5, 5, "#fff"); rect(e.x + 8, e.y + 12, 2, 2, "#000"); rect(e.x + 17, e.y + 12, 2, 2, "#000");
+    rect(e.x + 9, e.y + 17, 8, 4, "#f5a000");
+    const s = Math.floor(performance.now() / 160) % 2; rect(e.x + (s ? 0 : 3), e.y + 24, 8, 3, "#000"); rect(e.x + e.w - 8 - (s ? 0 : 3), e.y + 24, 8, 3, "#000");
+  }
+  /* player */
+  if (state !== "title" && !(P.inv > 0 && Math.floor(P.inv / 4) % 2)) drawPlayer();
+  /* popups */
+  particles.forEach(p => { ctx.save(); ctx.translate(-cam, 0); txt(p.text, p.x, p.y, 16, p.text[0] === "-" ? "#a00" : "#fff", "center"); ctx.restore(); });
+  ctx.restore();
+  /* HUD */
+  ctx.fillStyle = "#111"; ctx.fillRect(0, 0, VW, 30);
+  txt("SCORE " + String(score || 0).padStart(5, "0"), 12, 21, 16, "#FDF2D0");
+  txt("BLOCKS " + (answered || 0) + "/" + QUESTIONS.length, 330, 21, 16, "#FDF2D0");
+  for (let i = 0; i < 3; i++) txt("♥", VW - 90 + i * 24, 23, 22, i < lives ? "#ff4040" : "#552222");
+}
+function drawPlayer() {
+  const x = Math.round(P.x - cam), y = Math.round(P.y), f = P.face;
+  const step = P.on ? Math.floor(P.t / 10) % 2 : 0;
+  ctx.save(); ctx.translate(x + P.w / 2, 0); ctx.scale(f, 1);
+  const px = (ox, oy, w, h, c) => { ctx.fillStyle = c; ctx.fillRect(ox - P.w / 2, y + oy, w, h); };
+  px(2, 26, 7, 6, "#FDF2D0"); px(P.w - 9 - (step ? 0 : 2), 26, 7, 6, "#FDF2D0");
+  px(1, 17, P.w - 2, 11, "#D00000"); px(0, 17, P.w, 3, "#FDF2D0");
+  ctx.fillStyle = "#FDF2D0"; ctx.font = "bold 11px 'Courier New'"; ctx.textAlign = "center"; ctx.fillText("N", 0, y + 26);
+  px(3, 8, P.w - 6, 10, "#e8b48a");
+  px(1, 0, P.w - 2, 10, "#D00000"); px(P.w / 2 - 1, 0, 3, 10, "#FDF2D0"); px(P.w - 5, 8, 5, 3, "#c9c9c9");
+  px(P.w - 4, 5, 3, 3, "#000");
+  ctx.restore();
+}
+
+let last = 0, acc = 0;
+function loop(ts) {
+  acc += Math.min(50, ts - last); last = ts;
+  while (acc >= 1000 / 60) { update(); acc -= 1000 / 60; }
+  draw(); requestAnimationFrame(loop);
+}
+buildLevel(); P = { x: 60, y: GROUND*T - 32, w: 22, h: 32, vx: 0, vy: 0, on: true, face: 1, inv: 0, t: 0 };
+score = 0; lives = 3; answered = 0; correct = 0; cam = 0; particles = []; shake = 0;
+(async () => {
+  const id = location.pathname.split("/").pop();
+  try {
+    const r = await fetch("/api/game/" + encodeURIComponent(id));
+    if (!r.ok) throw new Error();
+    STORY = await r.json(); QUESTIONS = STORY.questions;
+    document.getElementById("hl").textContent = STORY.title;
+    const a = document.getElementById("src"); if (STORY.url) a.href = STORY.url; else a.style.display = "none";
+    titleScreen();
+  } catch (e) {
+    show('<h2>Game not found</h2><p>That link may be wrong.</p><a class="go" href="/">Make a new game</a>');
+  }
+  requestAnimationFrame(loop);
+})();
+window.__game = { get state() { return state; }, get P() { return P; }, start, askQuestion: i => askQuestion(qBlocks[i]), pick };
+</script>
+</body>
+</html>

@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Play the News | Daily Nebraskan</title>
+<link href="https://fonts.googleapis.com/css2?family=UnifrakturCook:wght@700&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Oswald:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  :root { --paper:#f6f1e7; --ink:#111; --red:#D00000; --mute:#555; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--paper); color:var(--ink); font-family:"Libre Baskerville",Georgia,serif; }
+  .page { max-width:760px; margin:0 auto; padding:16px; }
+  .mast { text-align:center; border-bottom:4px double var(--ink); padding-bottom:6px; }
+  .mast h1 { font-family:"UnifrakturCook","Old English Text MT",serif; font-size:clamp(38px,9vw,64px); margin:0; line-height:1.1; }
+  .dateline { display:flex; justify-content:space-between; font:500 12px Oswald,sans-serif; letter-spacing:1.5px; text-transform:uppercase;
+              border-bottom:1px solid var(--ink); padding:6px 0; color:var(--mute); }
+  .kicker { font:700 13px Oswald,sans-serif; letter-spacing:2px; color:var(--red); text-transform:uppercase; margin:28px 0 4px; }
+  h2 { font-size:clamp(26px,6vw,40px); line-height:1.15; margin:0 0 12px; }
+  p.dek { font-style:italic; color:var(--mute); line-height:1.6; margin:0 0 20px; }
+  form { display:flex; gap:8px; flex-wrap:wrap; }
+  input { flex:1 1 300px; font:16px "Libre Baskerville",serif; padding:12px; border:2px solid var(--ink); background:#fff; }
+  button, .btn { font:700 15px Oswald,sans-serif; letter-spacing:1.5px; text-transform:uppercase; padding:12px 20px; background:var(--red);
+                 color:#fff; border:2px solid var(--ink); cursor:pointer; text-decoration:none; display:inline-block; }
+  button.alt, .btn.alt { background:#fff; color:var(--ink); }
+  #status { margin:18px 0; font-size:15px; line-height:1.5; }
+  .err { color:var(--red); }
+  .box { border:2px solid var(--ink); border-top:6px solid var(--red); background:#fff; padding:16px; margin-top:16px; }
+  .box code { display:block; word-break:break-all; background:var(--paper); padding:8px; margin:8px 0 12px; font-size:14px; }
+  .how { border-top:1px solid var(--ink); margin-top:32px; padding-top:12px; display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:16px; font-size:14px; line-height:1.55; }
+  .how b { font:700 13px Oswald,sans-serif; letter-spacing:1.5px; text-transform:uppercase; color:var(--red); display:block; }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="mast"><h1>The Daily Nebraskan</h1></div>
+  <div class="dateline"><span>Play the news</span><span id="date"></span><span>University of Nebraska-Lincoln</span></div>
+
+  <div class="kicker">Today's game</div>
+  <h2 id="th">Play today's Daily Nebraskan story</h2>
+  <p class="dek" id="tdek">A new game every day, built from the newest story. Run through Lincoln and see if you've read the news.</p>
+  <a class="btn" href="/today">Play today's game</a>
+
+  <div class="kicker" style="margin-top:40px">Or pick your own</div>
+  <h2 style="font-size:clamp(22px,5vw,30px)">Turn any Daily Nebraskan story into a game</h2>
+  <p class="dek">Paste a story link. We'll write the questions from the reporting, then you run through Lincoln, bonk the question blocks, and see if you really read it. You get a link to share.</p>
+
+  <form id="f">
+    <input id="u" type="url" placeholder="https://www.dailynebraskan.com/..." aria-label="Daily Nebraskan story link" required>
+    <button id="go">Make it a game</button>
+  </form>
+  <div id="status" aria-live="polite"></div>
+  <div id="done"></div>
+  <p><a href="/play/demo">Try the demo game</a></p>
+
+  <div class="how">
+    <div><b>1. Paste</b>Any story from dailynebraskan.com.</div>
+    <div><b>2. Play</b>Six questions on the story and two headline-writing challenges, ending with STOP.</div>
+    <div><b>3. Share</b>Send the link to anyone. Each reader plays on their own.</div>
+  </div>
+</div>
+<script>
+document.getElementById("date").textContent = new Date().toLocaleDateString("en-US", { weekday:"long", month:"long", day:"numeric", year:"numeric" });
+const f = document.getElementById("f"), u = document.getElementById("u"), st = document.getElementById("status"), done = document.getElementById("done");
+f.addEventListener("submit", async e => { e.preventDefault(); make(u.value.trim()); });
+async function make(url) {
+  done.innerHTML = ""; st.className = ""; st.textContent = "Reading the story and writing your questions. This takes about 15 seconds...";
+  document.getElementById("go").disabled = true;
+  try {
+    const r = await fetch("/api/make", { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ url }) });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || "Something went wrong.");
+    const link = location.origin + "/play/" + d.id;
+    st.textContent = "";
+    done.innerHTML = `<div class="box"><b>Your game is ready.</b><code id="lk"></code>
+      <a class="btn" href="/play/${d.id}">Play now</a> <button class="alt" id="cp" type="button">Copy link</button></div>`;
+    document.getElementById("lk").textContent = link;
+    document.getElementById("cp").onclick = async ev => { try { await navigator.clipboard.writeText(link); ev.target.textContent = "Copied"; } catch (x) { prompt("Copy this link:", link); } };
+  } catch (err) { st.className = "err"; st.textContent = err.message; }
+  document.getElementById("go").disabled = false;
+}
+fetch("/api/today").then(r => r.ok ? r.json() : null).then(d => {
+  if (!d) return;
+  document.getElementById("th").textContent = d.title;
+  document.getElementById("tdek").textContent = "Today's story, turned into a game. The first load of a new day can take a few seconds.";
+}).catch(() => {});
+const pre = new URLSearchParams(location.search).get("url");
+if (pre) { u.value = pre; make(pre); }
+</script>
+</body>
+</html>
